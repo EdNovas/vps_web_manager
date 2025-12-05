@@ -160,33 +160,3 @@ node server.js
 
 <!-- end list -->
 
-````
-
----
-
-### How to upload this to GitHub
-
-If you haven't uploaded to GitHub before, here are the quick commands you can type in your terminal inside your project folder:
-
-1.  **Initialize Git:**
-    ```bash
-    git init
-    ```
-2.  **Add all files:**
-    ```bash
-    git add .
-    ```
-3.  **Commit the files:**
-    ```bash
-    git commit -m "Initial commit with Multi-user support"
-    ```
-4.  **Connect to GitHub:**
-    *(Go to GitHub.com, create a new repository, and copy the link ending in .git)*
-    ```bash
-    git branch -M main
-    git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-    ```
-5.  **Push to GitHub:**
-    ```bash
-    git push -u origin main
-    ```
