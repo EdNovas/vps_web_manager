@@ -78,7 +78,7 @@ Since this system is private, there is no public registration. You must create u
 5.  Go back to the Login screen and sign in with the new credentials.
 
 
-\<a name="chinese"\>\</a\>
+<a name="chinese"></a>
 
 ## 🇨🇳 中文说明
 
