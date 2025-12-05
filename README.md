@@ -77,7 +77,6 @@ Since this system is private, there is no public registration. You must create u
 4.  Enter a generic Username and Password.
 5.  Go back to the Login screen and sign in with the new credentials.
 
------
 
 \<a name="chinese"\>\</a\>
 
