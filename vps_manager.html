@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VPS Console Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <style>body { background-color: #0f172a; color: #e2e8f0; } .terminal { padding: 10px; }</style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- COMPONENTS ---
+
+        const CopyButton = ({ text, small = false }) => {
+            const [copied, setCopied] = useState(false);
+            const handleCopy = (e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(text);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+            return (
+                <button onClick={handleCopy} className={`rounded transition-colors border ${small ? 'p-1 text-xs' : 'p-2'} ${copied ? 'bg-green-600/20 text-green-400 border-green-600/50' : 'bg-gray-700 hover:bg-gray-600 text-gray-400 border-gray-600'}`} title="Copy">
+                    {copied ? <i data-lucide="check" className={small ? "w-3 h-3" : "w-4 h-4"}></i> : <i data-lucide="copy" className={small ? "w-3 h-3" : "w-4 h-4"}></i>}
+                </button>
+            );
+        };
+
+        const QRCodeImage = ({ value }) => {
+            const [imgSrc, setImgSrc] = useState('');
+            useEffect(() => {
+                const qr = new QRious({ value, size: 300, level: 'H', padding: 15, background: 'white', foreground: 'black' });
+                setImgSrc(qr.toDataURL());
+            }, [value]);
+            if (!imgSrc) return <div className="w-full h-48 bg-gray-800 animate-pulse rounded-lg"></div>;
+            return (
+                <div className="flex justify-center items-center w-full my-4">
+                    <div className="bg-white p-4 rounded-lg shadow-lg mx-auto">
+                        <img src={imgSrc} className="block w-48 h-48" alt="QR Code" />
+                    </div>
+                </div>
+            );
+        };
+
+        const LoginScreen = ({ onLogin, onGoAdmin }) => {
+            const [user, setUser] = useState('');
+            const [pass, setPass] = useState('');
+            const [err, setErr] = useState('');
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: user, password: pass})
+                });
+                const data = await res.json();
+                if(data.success) {
+                    onLogin(data.user);
+                } else {
+                    setErr(data.error);
+                }
+            };
+
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-4">
+                    <div className="w-full max-w-md bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700">
+                        <h1 className="text-2xl font-bold text-white mb-6 flex gap-2 justify-center"><i data-lucide="lock" className="w-8 h-8 text-blue-500"></i> Login to Console</h1>
+                        {err && <div className="bg-red-500/20 text-red-200 p-3 rounded text-sm mb-4 border border-red-500/50">{err}</div>}
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div><label className="text-xs font-bold text-gray-400">USERNAME</label><input autoFocus value={user} onChange={e=>setUser(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-white p-3 rounded mt-1 focus:border-blue-500 outline-none" /></div>
+                            <div><label className="text-xs font-bold text-gray-400">PASSWORD</label><input type="password" value={pass} onChange={e=>setPass(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-white p-3 rounded mt-1 focus:border-blue-500 outline-none" /></div>
+                            <button className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded font-bold transition">Login</button>
+                        </form>
+                        <div className="mt-6 text-center border-t border-gray-700 pt-4">
+                            <button onClick={onGoAdmin} className="text-gray-500 hover:text-white text-xs underline">Admin: Create User</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminScreen = ({ onBack }) => {
+            const [secret, setSecret] = useState('');
+            const [newUser, setNewUser] = useState('');
+            const [newPass, setNewPass] = useState('');
+            const [msg, setMsg] = useState({type: '', text: ''});
+
+            const handleCreate = async (e) => {
+                e.preventDefault();
+                const res = await fetch('/api/admin/users', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({adminSecret: secret, username: newUser, password: newPass})
+                });
+                const data = await res.json();
+                if(data.success) {
+                    setMsg({type: 'success', text: 'User created successfully!'});
+                    setNewUser(''); setNewPass('');
+                } else {
+                    setMsg({type: 'error', text: data.error});
+                }
+            };
+
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-4">
+                    <div className="w-full max-w-md bg-gray-800 p-8 rounded-xl shadow-2xl border border-red-900/50">
+                        <div className="flex justify-between items-center mb-6">
+                            <h1 className="text-xl font-bold text-white flex gap-2"><i data-lucide="shield-alert" className="w-6 h-6 text-red-500"></i> Admin Panel</h1>
+                            <button onClick={onBack} className="text-gray-400 hover:text-white"><i data-lucide="x" className="w-5 h-5"></i></button>
+                        </div>
+                        {msg.text && <div className={`p-3 rounded text-sm mb-4 border ${msg.type === 'success' ? 'bg-green-500/20 text-green-200 border-green-500/50' : 'bg-red-500/20 text-red-200 border-red-500/50'}`}>{msg.text}</div>}
+                        <form onSubmit={handleCreate} className="space-y-4">
+                            <div><label className="text-xs font-bold text-red-400">ADMIN SECRET KEY</label><input type="password" value={secret} onChange={e=>setSecret(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-white p-3 rounded mt-1 focus:border-red-500 outline-none" placeholder="Master Key" /></div>
+                            <div className="h-px bg-gray-700 my-4"></div>
+                            <p className="text-sm text-gray-400">New User Details:</p>
+                            <div><input value={newUser} onChange={e=>setNewUser(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-white p-2 rounded focus:border-blue-500 outline-none" placeholder="New Username" /></div>
+                            <div><input type="password" value={newPass} onChange={e=>setNewPass(e.target.value)} className="w-full bg-gray-900 border border-gray-600 text-white p-2 rounded focus:border-blue-500 outline-none" placeholder="New Password" /></div>
+                            <button className="w-full bg-red-600 hover:bg-red-500 text-white py-3 rounded font-bold transition">Create User</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const MainApp = ({ currentUser, onLogout }) => {
+            const [step, setStep] = useState('login'); 
+            const [credentials, setCredentials] = useState({ ip: '', user: 'root', pass: '' });
+            const [sessions, setSessions] = useState([]);
+            const [socket, setSocket] = useState(null);
+            const [detectedConfig, setDetectedConfig] = useState(null);
+            
+            const terminalRef = useRef(null);
+            const xtermRef = useRef(null);
+            const fitAddonRef = useRef(null);
+            const outputBuffer = useRef('');
+
+            // --- Database Fetching ---
+            const fetchSessions = async () => {
+                try {
+                    const res = await fetch('/api/sessions');
+                    if(res.status === 401) return onLogout();
+                    const data = await res.json();
+                    setSessions(data);
+                } catch (e) { console.error(e); }
+            };
+
+            const saveSession = async () => {
+                const label = prompt("Update label for this session:", sessions.find(s => s.ip === credentials.ip && s.user === credentials.user)?.label || credentials.ip);
+                if (label) {
+                    await fetch('/api/sessions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ip: credentials.ip, user: credentials.user, password: credentials.pass, label })
+                    });
+                    fetchSessions();
+                }
+            };
+
+            const updateSessionLabel = async (e, session) => {
+                e.stopPropagation();
+                const newLabel = prompt("Enter new label:", session.label || session.ip);
+                if (newLabel && newLabel !== session.label) {
+                    await fetch(`/api/sessions/${session.id}/label`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ label: newLabel })
+                    });
+                    fetchSessions();
+                }
+            };
+
+            const modifySession = async (e, session) => {
+                e.stopPropagation();
+                const newIp = prompt("Edit IP Address:", session.ip);
+                if (newIp === null) return;
+                const newUser = prompt("Edit Username:", session.user);
+                if (newUser === null) return;
+                const newPass = prompt("Edit Password (leave blank to keep current):", "");
+                const finalPass = newPass ? newPass : session.password;
+                const newLabel = prompt("Edit Label:", session.label || newIp);
+                if (newLabel === null) return;
+
+                await fetch(`/api/sessions/${session.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip: newIp, user: newUser, password: finalPass, label: newLabel })
+                });
+                fetchSessions();
+            };
+
+            const deleteSession = async (e, id) => {
+                e.stopPropagation();
+                if(confirm("Delete this saved session?")) {
+                    await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+                    fetchSessions();
+                }
+            };
+
+            useEffect(() => { fetchSessions(); }, []);
+
+            // --- Socket & Terminal Logic ---
+            useEffect(() => {
+                const newSocket = io();
+                setSocket(newSocket);
+                newSocket.on('status', (msg) => xtermRef.current?.write(msg));
+                newSocket.on('data', (data) => {
+                    xtermRef.current?.write(data);
+                    outputBuffer.current += data;
+                    if(outputBuffer.current.length > 5000) outputBuffer.current = outputBuffer.current.slice(-5000);
+                    parseOutput(outputBuffer.current);
+                });
+                return () => newSocket.close();
+            }, []);
+
+            const parseOutput = (text) => {
+                const vmessMatch = text.match(/VMess Link:\s+(vmess:\/\/[a-zA-Z0-9+/=]+)/);
+                const socksMatch = text.match(/协议:\s*socks[\s\S]*?地址:\s*([\d\.]+)[\s\S]*?端口:\s*(\d+)[\s\S]*?用户名:\s*(\w+)[\s\S]*?密码:\s*(\w+)/);
+                if (vmessMatch || socksMatch) {
+                    setDetectedConfig(prev => {
+                        let newState = { ...prev };
+                        if (vmessMatch) newState.vmessLink = vmessMatch[1];
+                        if (socksMatch) newState.socks = { address: socksMatch[1], port: socksMatch[2], user: socksMatch[3], pass: socksMatch[4] };
+                        return (JSON.stringify(prev) !== JSON.stringify(newState)) ? newState : prev;
+                    });
+                }
+            };
+
+            useEffect(() => {
+                if (step === 'terminal' && terminalRef.current && !xtermRef.current) {
+                    const term = new Terminal({ cursorBlink: true, theme: { background: '#000000' }, fontSize: 14, fontFamily: 'Menlo, monospace', rows: 30 });
+                    const fitAddon = new FitAddon.FitAddon();
+                    term.loadAddon(fitAddon);
+                    term.open(terminalRef.current);
+                    fitAddon.fit();
+                    xtermRef.current = term;
+                    fitAddonRef.current = fitAddon;
+                    term.onData(data => socket.emit('data', data));
+                    socket.emit('start-ssh', credentials);
+                    window.addEventListener('resize', () => { fitAddon.fit(); socket.emit('resize', { cols: term.cols, rows: term.rows }); });
+                }
+            }, [step]);
+
+            useEffect(() => { if (window.lucide) window.lucide.createIcons(); }, [step, sessions]);
+
+            const handleConnect = async (e, isAuto = false) => { 
+                if (e) e.preventDefault();
+                const existingSession = sessions.find(s => s.ip === credentials.ip && s.user === credentials.user);
+                const labelToSave = existingSession ? existingSession.label : credentials.ip;
+                
+                try {
+                    await fetch('/api/sessions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ip: credentials.ip, user: credentials.user, password: credentials.pass, label: labelToSave })
+                    });
+                    fetchSessions(); 
+                } catch (err) { console.error(err); }
+
+                setStep('terminal'); 
+            };
+
+            const loadSession = (session) => { 
+                setCredentials({ ip: session.ip, user: session.user, pass: session.password || '' });
+            };
+            
+            const sendCommand = (cmd) => { if (socket) { outputBuffer.current = ''; setDetectedConfig(null); socket.emit('data', cmd + '\n'); } };
+
+            return (
+                <div className="min-h-screen flex flex-col p-4 gap-4">
+                    <div className="flex justify-between items-center shrink-0">
+                        <div className="flex items-center gap-4">
+                            <h1 className="text-xl font-bold text-white flex gap-2 items-center"><i data-lucide="terminal" className="w-6 h-6"></i> VPS Console</h1>
+                            <span className="text-gray-500 text-sm border-l border-gray-700 pl-4">Logged in as: <span className="text-white font-bold">{currentUser}</span></span>
+                            {step === 'terminal' && (
+                                <div className="hidden md:flex items-center gap-2 bg-gray-800 px-3 py-1 rounded-full text-xs border border-gray-700 text-gray-300">
+                                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                    <span>{credentials.user}@{credentials.ip}</span>
+                                    <CopyButton text={credentials.ip} small={true} />
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex gap-2">
+                            {step === 'terminal' && <button onClick={saveSession} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm flex gap-2 items-center"><i data-lucide="edit" className="w-4 h-4"></i> Label</button>}
+                            {step === 'terminal' && <button onClick={() => window.location.reload()} className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-1 rounded text-sm">Close Session</button>}
+                            <button onClick={onLogout} className="bg-red-900/50 hover:bg-red-800 text-red-200 border border-red-800/50 px-4 py-1 rounded text-sm flex gap-2 items-center"><i data-lucide="log-out" className="w-4 h-4"></i> Logout</button>
+                        </div>
+                    </div>
+
+                    {step === 'login' ? (
+                        <div className="flex flex-col md:flex-row gap-6 max-w-5xl mx-auto w-full mt-10">
+                            <div className="flex-1 bg-gray-800 p-6 rounded-xl shadow-xl border border-gray-700">
+                                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="shield-check" className="w-5 h-5 text-blue-400"></i> SSH Login</h2>
+                                <form onSubmit={handleConnect} className="space-y-4">
+                                    <div><label className="text-xs text-gray-400 font-bold ml-1">IP ADDRESS</label><input required className="w-full bg-gray-900 border border-gray-600 text-white p-2 rounded mt-1 outline-none" placeholder="1.2.3.4" value={credentials.ip} onChange={e => setCredentials({...credentials, ip: e.target.value.replace(/\s/g,'')})} /></div>
+                                    <div><label className="text-xs text-gray-400 font-bold ml-1">USERNAME</label><input className="w-full bg-gray-900 border border-gray-600 text-white p-2 rounded mt-1 outline-none" placeholder="root" value={credentials.user} onChange={e => setCredentials({...credentials, user: e.target.value})} /></div>
+                                    <div><label className="text-xs text-gray-400 font-bold ml-1">PASSWORD</label><input type="password" className="w-full bg-gray-900 border border-gray-600 text-white p-2 rounded mt-1 outline-none" placeholder="••••••••" value={credentials.pass} onChange={e => setCredentials({...credentials, pass: e.target.value})} /></div>
+                                    <button className="w-full bg-blue-600 text-white py-3 rounded font-bold hover:bg-blue-500 transition shadow-lg mt-2">Connect to Terminal</button>
+                                </form>
+                            </div>
+
+                            <div className="flex-1 bg-gray-800 p-6 rounded-xl shadow-xl border border-gray-700 flex flex-col">
+                                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><i data-lucide="history" className="w-5 h-5 text-purple-400"></i> My Saved Sessions</h2>
+                                <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar" style={{maxHeight: '320px'}}>
+                                    {sessions.length === 0 ? (
+                                        <p className="text-gray-500 text-sm italic text-center mt-10">No saved sessions found for you.</p>
+                                    ) : (
+                                        sessions.map(s => (
+                                            <div key={s.id} onClick={() => loadSession(s)} className="group bg-gray-900/50 hover:bg-gray-700 p-3 rounded-lg border border-gray-700 cursor-pointer transition-all flex justify-between items-center">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-white font-bold text-sm">{s.label || s.ip}</div>
+                                                        <button onClick={(e) => updateSessionLabel(e, s)} className="text-gray-500 hover:text-blue-400 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Edit Label"><i data-lucide="edit-2" className="w-3 h-3"></i></button>
+                                                        <button onClick={(e) => modifySession(e, s)} className="text-gray-500 hover:text-yellow-400 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Settings"><i data-lucide="settings" className="w-3 h-3"></i></button>
+                                                    </div>
+                                                    <div className="text-xs text-gray-400 flex items-center gap-1">
+                                                        {s.user}@{s.ip}
+                                                        <button onClick={(e) => {e.stopPropagation(); navigator.clipboard.writeText(s.ip);}} className="hover:text-white p-1 rounded"><i data-lucide="copy" className="w-3 h-3"></i></button>
+                                                    </div>
+                                                </div>
+                                                <button onClick={(e) => deleteSession(e, s.id)} className="text-gray-600 hover:text-red-400 p-2"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col lg:flex-row gap-4 h-auto lg:h-[85vh]">
+                            {/* Toolbar (Left Panel) */}
+                            <div className="lg:w-72 flex flex-col gap-3 shrink-0 lg:overflow-y-auto lg:h-full">
+                                <div className="bg-gray-800 p-4 rounded-xl shadow-xl border border-gray-700 flex flex-col gap-2">
+                                    <h3 className="text-gray-400 text-xs font-bold uppercase mb-1">Quick Actions</h3>
+                                    <button onClick={() => sendCommand('wget -N https://raw.githubusercontent.com/ednovas/vpstoolbox/main/ednovastool.sh && chmod +x ednovastool.sh && ./ednovastool.sh')} className="bg-purple-900/40 hover:bg-purple-900/60 text-purple-300 text-left p-3 rounded-lg text-sm flex gap-3 items-center border border-purple-500/30 transition-all group">
+                                        <div className="bg-purple-500/20 p-1.5 rounded group-hover:bg-purple-500/30"><i data-lucide="wrench" className="w-4 h-4"></i></div>
+                                        <div><div className="font-bold">Run EdNovas Tool</div><div className="text-[10px] opacity-70">Install & Run Toolbox</div></div>
+                                    </button>
+                                    <div className="h-px bg-gray-700 my-2"></div>
+                                    <button onClick={() => sendCommand('apt-get update -y && apt-get install -y curl && bash <(curl -L https://raw.githubusercontent.com/EdNovas/vmess-tcp/refs/heads/main/install_simple.sh)')} className="bg-gray-700 hover:bg-gray-600 text-white text-left p-2.5 rounded text-sm transition flex items-center gap-2"><i data-lucide="download" className="w-4 h-4 text-blue-400"></i> Install VMess</button>
+                                    <button onClick={() => sendCommand('apt-get update -y && apt-get install -y curl && bash <(curl -L https://raw.githubusercontent.com/EdNovas/vmess-tcp/refs/heads/main/install_socks.sh)')} className="bg-gray-700 hover:bg-gray-600 text-white text-left p-2.5 rounded text-sm transition flex items-center gap-2"><i data-lucide="download" className="w-4 h-4 text-green-400"></i> Install SOCKS5</button>
+                                    <button onClick={() => sendCommand('apt-get update -y && apt-get install -y curl && bash <(curl -L https://raw.githubusercontent.com/EdNovas/vmess-tcp/refs/heads/main/install_both.sh)')} className="bg-gray-700 hover:bg-gray-600 text-white text-left p-2.5 rounded text-sm transition flex items-center gap-2"><i data-lucide="layers" className="w-4 h-4 text-yellow-400"></i> Install Both</button>
+                                    <div className="h-px bg-gray-700 my-2"></div>
+                                    <button onClick={() => sendCommand('bash <(curl -L https://raw.githubusercontent.com/EdNovas/vmess-tcp/refs/heads/main/uninstall.sh)')} className="text-red-300 hover:bg-red-900/30 border border-red-900/30 text-left p-2.5 rounded text-sm transition flex items-center gap-2"><i data-lucide="trash-2" className="w-4 h-4"></i> Uninstall All</button>
+                                </div>
+
+                                {detectedConfig && (
+                                    <div className="flex flex-col gap-3 animate-fade-in pb-4">
+                                        {detectedConfig.vmessLink && (
+                                            <div className="bg-gray-800 border border-blue-500/30 p-4 rounded-xl shadow-xl info-card">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <h3 className="text-xs font-bold text-blue-400 uppercase">VMess Config</h3>
+                                                    <CopyButton text={detectedConfig.vmessLink} />
+                                                </div>
+                                                <QRCodeImage value={detectedConfig.vmessLink} />
+                                                <input readOnly value={detectedConfig.vmessLink} className="w-full bg-black/50 border border-gray-700 text-gray-400 text-[10px] p-2 rounded truncate" />
+                                            </div>
+                                        )}
+                                        {detectedConfig.socks && (
+                                            <div className="bg-gray-800 border border-green-500/30 p-4 rounded-xl shadow-xl info-card relative">
+                                                <div className="absolute top-4 right-4">
+                                                    <CopyButton small={true} text={`协议: socks\n地址: ${detectedConfig.socks.address}\n端口: ${detectedConfig.socks.port}\n用户名: ${detectedConfig.socks.user}\n密码: ${detectedConfig.socks.pass}`} />
+                                                </div>
+                                                <h3 className="text-xs font-bold text-green-400 uppercase mb-3">SOCKS5 Config</h3>
+                                                <div className="bg-black/30 border border-gray-700 rounded-lg p-3 font-mono text-xs text-gray-300 whitespace-pre leading-relaxed">
+{`协议: socks
+地址: ${detectedConfig.socks.address}
+端口: ${detectedConfig.socks.port}
+用户名: ${detectedConfig.socks.user}
+密码: ${detectedConfig.socks.pass}`}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Terminal Window (Right Panel) */}
+                            <div className="flex-1 bg-black rounded-xl overflow-hidden border border-gray-700 shadow-2xl relative min-h-[300px] lg:h-full">
+                                <div ref={terminalRef} className="absolute inset-0 h-full w-full"></div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [view, setView] = useState('loading'); // loading, login, app, admin
+            const [currentUser, setCurrentUser] = useState(null);
+
+            useEffect(() => {
+                fetch('/api/me').then(res=>res.json()).then(data => {
+                    if(data.loggedIn) {
+                        setCurrentUser(data.username);
+                        setView('app');
+                    } else {
+                        setView('login');
+                    }
+                });
+            }, []);
+
+            const handleLogout = async () => {
+                await fetch('/api/logout', {method: 'POST'});
+                setCurrentUser(null);
+                setView('login');
+            };
+
+            if(view === 'loading') return <div className="text-white p-10">Loading...</div>;
+            if(view === 'admin') return <AdminScreen onBack={() => setView('login')} />;
+            if(view === 'login') return <LoginScreen onLogin={(user) => { setCurrentUser(user.username); setView('app'); }} onGoAdmin={() => setView('admin')} />;
+            
+            return <MainApp currentUser={currentUser} onLogout={handleLogout} />;
+        };
+
+        setInterval(() => { if (window.lucide) window.lucide.createIcons(); }, 1000);
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
