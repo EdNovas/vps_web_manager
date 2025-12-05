@@ -31,7 +31,7 @@
 Create a database in MySQL (e.g., via phpMyAdmin or aaPanel):
 ```sql
 CREATE DATABASE vps_manager;
-````
+
 
 *Note: The application will automatically create the necessary tables (`users` and `sessions`) when it starts.*
 
