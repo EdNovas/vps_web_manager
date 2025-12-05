@@ -1,3 +1,7 @@
+# Sample Website 演示网站
+
+https://vps.ednovas.tech
+<img width="2560" height="1229" alt="Snipaste_2025-12-04_22-30-24" src="https://github.com/user-attachments/assets/67959879-2f62-45c7-ad11-0ea91e2220cf" />
 
 # VPS Manager Pro (Web SSH Terminal)
 
@@ -5,6 +9,7 @@
 
 <a name="english"></a>
 ## 🇬🇧 English
+
 
 **VPS Manager Pro** is a powerful, web-based SSH terminal that allows you to manage multiple VPS connections from your browser. It features multi-user support, session saving via MySQL, and intelligent detection of proxy configurations (VMess/SOCKS5) directly from the terminal output.
 
