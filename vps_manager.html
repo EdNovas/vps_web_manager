@@ -85,7 +85,7 @@
         const QRCodeImage = ({ value }) => {
             const [imgSrc, setImgSrc] = useState('');
             useEffect(() => {
-                const qr = new QRious({ value, size: 300, level: 'H', padding: 18, background: 'white', foreground: 'black' });
+                const qr = new QRious({ value, size: 300, level: 'H', padding: 25, background: 'white', foreground: 'black' });
                 setImgSrc(qr.toDataURL());
             }, [value]);
             if (!imgSrc) return <div className="w-full h-48 bg-gray-800 animate-pulse rounded-lg"></div>;
