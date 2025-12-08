@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const { Client } = require('ssh2');
 const session = require('express-session');
 const path = require('path');
+const { exec } = require('child_process'); // Native Node module, no install needed
 const fs = require('fs');
 const db = require('./database');
 
@@ -92,6 +93,38 @@ app.post('/api/admin/users', async (req, res) => {
         res.status(400).json({ error: 'User already exists or error occurred' });
     }
 });
+
+
+// --- NATIVE SYSTEM PING (No Module Required) ---
+app.post('/api/ping', requireAuth, (req, res) => {
+    const { ip } = req.body;
+    
+    // Basic security check to ensure it looks like an IP or hostname (prevents command injection)
+    if (!ip || !/^[a-zA-Z0-9.\-_]+$/.test(ip)) {
+        return res.status(400).json({ error: 'Invalid IP address' });
+    }
+
+    // Run standard Linux ping: -c 1 (count 1), -W 2 (wait 2 seconds max)
+    const command = `ping -c 1 -W 2 ${ip}`;
+
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            // If ping returns error code (host unreachable), we send alive: false
+            return res.json({ alive: false, error: 'Unreachable' });
+        }
+
+        // Parse the time from the output (e.g., "time=24.5 ms")
+        const timeMatch = stdout.match(/time=([\d\.]+)/);
+        const time = timeMatch ? parseFloat(timeMatch[1]) : '<1';
+
+        res.json({ 
+            alive: true, 
+            time: time, 
+            output: stdout 
+        });
+    });
+});
+// -------------------------
 
 // Protected Session API Routes (Scoped to Logged In User)
 app.get('/api/sessions', requireAuth, async (req, res) => {
