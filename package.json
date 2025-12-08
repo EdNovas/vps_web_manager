@@ -1,7 +1,7 @@
 {
   "name": "vps-manager",
-  "version": "2.0.0",
-  "description": "Multi-user SSH terminal with MySQL Session Management",
+  "version": "2.1.0",
+  "description": "Multi-user SSH terminal with Ping and Session Management",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
